@@ -1,0 +1,29 @@
+name:               godot-ser
+version:            0.1.0.0
+license:            NONE
+author:             Vito Canadi
+maintainer:         vito.canadi@gmail.com
+extra-source-files: CHANGELOG.md
+
+dependencies:
+  - base
+  - bytestring
+  - network
+  - linear
+  - lens
+  - text
+  - data-default
+  - text
+  - utf8-string
+  - store
+  - pretty-simple
+  - attoparsec
+
+tests:
+  spec:
+    build-depends:
+    - base
+    - hspec
+    main: Spec.hs
+    source-dirs: spec
+version: 0.1.0.0
