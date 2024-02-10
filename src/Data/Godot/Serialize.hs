@@ -2,6 +2,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts  #-}
 
 module Data.Godot.Serialize where
 
@@ -154,9 +158,3 @@ genericSer :: (Generic a, SerializableGen (Rep a)) => a -> ByteString
 genericSer = serGen . from
 genericDesP :: (Generic a, SerializableGen (Rep a)) => Parser a
 genericDesP = to <$> desGenP
-
-newtype A = A Int32 deriving(Generic, Show)
-newtype B = B { bInt32 :: Int32  } deriving(Generic, Show)
-
-instance Serializable A where
-instance Serializable B where

@@ -8,6 +8,7 @@ extra-source-files: CHANGELOG.md
 dependencies:
   - base
   - bytestring
+  - containers
   - network
   - linear
   - lens
@@ -15,15 +16,19 @@ dependencies:
   - data-default
   - text
   - utf8-string
-  - store
   - pretty-simple
   - attoparsec
+  - store
+
+library:
+  source-dirs: src
 
 tests:
   spec:
     build-depends:
     - base
     - hspec
+    - godot-ser
     main: Spec.hs
     source-dirs: spec
 version: 0.1.0.0

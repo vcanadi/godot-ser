@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Data.Godot.SerializeSpec
   ( spec
   ) where
@@ -8,6 +9,14 @@ module Data.Godot.SerializeSpec
 import           Test.Hspec
 import qualified Data.ByteString as BS
 import Data.Godot.Serialize
+import Data.Int (Int32)
+import GHC.Generics (Generic)
+
+newtype A = A Int32 deriving(Generic, Show)
+newtype B = B { bInt32 :: Int32  } deriving(Generic, Show)
+
+instance Serializable A where
+instance Serializable B where
 
 main = do
   let a  = A 1
