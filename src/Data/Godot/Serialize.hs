@@ -13,10 +13,9 @@ module Data.Godot.Serialize where
 import Data.ByteString (ByteString, pack, unpack, singleton)
 import Data.String(fromString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.UTF8 as BSU
 import Data.Word (Word8)
 import Data.Store(encode, decode, PeekException, Store)
-import Data.Int
+import Data.Int (Int32, Int64)
 import Control.Arrow (Arrow(first), ArrowChoice (left))
 import Control.Category ((>>>))
 import Data.Char (chr, ord)
@@ -25,8 +24,15 @@ import Data.Default (Default(..))
 import Control.Monad (replicateM, void)
 import Data.Functor (($>))
 import Data.Attoparsec.ByteString
+    ( Parser, word8, anyWord8, parseOnly )
 import GHC.Generics
-import Data.Map
+    ( Generic(..),
+      U1(..),
+      K1(K1),
+      M1(M1),
+      type (:+:)(..),
+      type (:*:)(..) )
+import Data.Map(Map)
 import qualified Data.Map as M
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect

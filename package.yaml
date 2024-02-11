@@ -4,19 +4,12 @@ license:            NONE
 author:             Vito Canadi
 maintainer:         vito.canadi@gmail.com
 extra-source-files: CHANGELOG.md
-
+synopsis:           Binary [de]serialization compatible with Godot game engine's default serialization (var_to_bytes, bytes_to_var)
 dependencies:
   - base
   - bytestring
   - containers
-  - network
-  - linear
-  - lens
-  - text
   - data-default
-  - text
-  - utf8-string
-  - pretty-simple
   - attoparsec
   - store
 
