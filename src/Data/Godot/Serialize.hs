@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances  #-}
 
 module Data.Godot.Serialize where
 
@@ -26,6 +27,7 @@ import Data.Functor (($>))
 import Data.Attoparsec.ByteString
 import GHC.Generics
 import Data.Map
+import qualified Data.Map as M
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect
             | DesErrWrongValues String -- ^ Error if prefix is correct, but rest of the message is incorrect
@@ -39,6 +41,8 @@ bytes = traverse word8
 
 prefix :: Word8 -> Parser [Word8]
 prefix a = bytes [a,0,0,0]
+
+singleByte = anyWord8
 
 byte4Block :: Parser ByteString
 byte4Block = BS.pack <$> replicateM 4 anyWord8
@@ -106,26 +110,65 @@ instance Serializable Double where
   desP = bytes [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
      <|> bytes [3,0,1,0] *> decode8P
 
--- | Serialized length
-serLen :: [a] -> ByteString
-serLen = encode . fromIntegral @Int @Int32 . length
-
-instance Serializable a => Serializable [a] where
-  ser xs = pack [28,0,0,0] <> serLen xs <> foldMap ser xs
-  desP = do
-    prefix 28
-    -- Parse length of the array
-    (n :: Int32) <- decode4P
-    nTimesP n
-
--- | Parse something n times
-nTimesP :: Serializable a => Int32 -> Parser [a]
-nTimesP 0 = pure []
-nTimesP n = (:) <$> desP <*> nTimesP (pred n)
+instance (Serializable a, Serializable b) => Serializable (a, b) where
+  ser = genericSer
+  desP = genericDesP
 
 -- | Pad 4block to 8block
 pad :: ByteString -> ByteString
 pad = (<> BS.pack [0,0,0,0])
+
+-- | Pad bytestring with zeroes so its length is divisible by 4
+padTo4 :: ByteString -> ByteString
+padTo4 bs = bs <> BS.replicate (extra4 $ BS.length bs) 0
+  where
+    extra4 n = (4 - n `rem` 4) `rem` 4
+
+instance {-# OVERLAPS #-} Serializable String where
+  ser s = pack [4,0,0,0] <> lenSer s  <> padTo4 (BS.pack $ BS.head . encode <$> s)
+
+  desP = do
+    prefix 4
+    -- Parse length of the array
+    (n :: Int32) <- decode4P
+    nTimesP charP n
+    where
+      charP = toEnum . fromEnum <$> singleByte
+
+-- List serialization
+
+-- | Serialized length
+lenSer :: Foldable f => f a -> ByteString
+lenSer = encode . fromIntegral @Int @Int32 . length
+
+-- | List of elements serialized with its length
+listSer :: Serializable a => [a] -> ByteString
+listSer xs = lenSer xs <> foldMap ser xs
+
+-- | Parse a list of elements with its length encoded in the beginning
+listDesP :: Parser a -> Parser [a]
+listDesP p = do
+  -- Parse length of the array
+  decode4P @Int32 >>= nTimesP p
+
+-- | Serializable instance for List
+instance {-# OVERLAPPABLE #-} Serializable a => Serializable [a] where
+  ser = (pack [28,0,0,0] <>) . listSer
+  desP = prefix 28 *> listDesP desP
+
+-- | Parse something n times
+nTimesP :: Parser a -> Int32 -> Parser [a]
+nTimesP _ 0 = pure []
+nTimesP p n = (:) <$> p <*> nTimesP p (pred n)
+
+-- Map serialization
+
+-- | Serializable instance for List
+instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
+  ser xs = pack [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
+  desP = do
+    prefix 28
+    M.fromList <$> listDesP desP
 
 -- | Desialize a 'Generic' value to
 class SerializableGen g where
