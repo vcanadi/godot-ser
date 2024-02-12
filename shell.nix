@@ -5,11 +5,8 @@ let
   u = import ./util.nix {};
   this = import ./default.nix {};
   ghc = pkgs.haskellPackages.ghcWithPackages
-          (ps:  this.getCabalDeps.libraryHaskellDepends
-             ++ this.getCabalDeps.executableHaskellDepends
-             ++ this.getCabalDeps.testHaskellDepends
+          (ps:  [this]
              ++ u.whenFlag withHLS ps.haskell-language-server
-             ++ [this]
           );
 in
 pkgs.stdenv.mkDerivation {

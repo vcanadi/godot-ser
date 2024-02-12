@@ -5,6 +5,15 @@ author:             Vito Canadi
 maintainer:         vito.canadi@gmail.com
 extra-source-files: CHANGELOG.md
 synopsis:           Binary [de]serialization compatible with Godot game engine's default serialization (var_to_bytes, bytes_to_var)
+
+default-extensions:
+  - LambdaCase
+  - OverloadedStrings
+  - DefaultSignatures
+  - ScopedTypeVariables
+  - TypeApplications
+  - DeriveGeneric
+
 dependencies:
   - base
   - bytestring

@@ -1,9 +1,6 @@
-{-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances  #-}
@@ -40,7 +37,7 @@ data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode 
             | DesErrStore String       -- ^ Error returned during deserialization with 'Data.Store'
             | DesErrParser String
             | DesErrDecoder PeekException
-            deriving(Show)
+            deriving(Show, Eq)
 
 bytes :: [Word8] -> Parser [Word8]
 bytes = traverse word8
@@ -124,11 +121,12 @@ instance (Serializable a, Serializable b) => Serializable (a, b) where
 pad :: ByteString -> ByteString
 pad = (<> BS.pack [0,0,0,0])
 
+digitsToFull4 :: Integral a => a -> a
+digitsToFull4 n = (4 - n `rem` 4) `rem` 4
+
 -- | Pad bytestring with zeroes so its length is divisible by 4
 padTo4 :: ByteString -> ByteString
-padTo4 bs = bs <> BS.replicate (extra4 $ BS.length bs) 0
-  where
-    extra4 n = (4 - n `rem` 4) `rem` 4
+padTo4 bs = bs <> BS.replicate (digitsToFull4 $ BS.length bs) 0
 
 instance {-# OVERLAPS #-} Serializable String where
   ser s = pack [4,0,0,0] <> lenSer s  <> padTo4 (BS.pack $ BS.head . encode <$> s)
@@ -137,7 +135,9 @@ instance {-# OVERLAPS #-} Serializable String where
     prefix 4
     -- Parse length of the array
     (n :: Int32) <- decode4P
-    nTimesP charP n
+    res <- nTimesP charP n
+    nTimesP (word8 0) (digitsToFull4 n)
+    pure res
     where
       charP = toEnum . fromEnum <$> singleByte
 
@@ -173,7 +173,7 @@ nTimesP p n = (:) <$> p <*> nTimesP p (pred n)
 instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
   ser xs = pack [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
   desP = do
-    prefix 28
+    prefix 18
     M.fromList <$> listDesP desP
 
 -- | Desialize a 'Generic' value to
