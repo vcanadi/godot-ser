@@ -10,7 +10,7 @@ module Data.Godot.Serialize where
 import Data.ByteString (ByteString, pack, unpack, singleton)
 import Data.String(fromString)
 import qualified Data.ByteString as BS
-import Data.Word (Word8)
+import Data.Word (Word8, Word32, Word16)
 import Data.Store(encode, decode, PeekException, Store)
 import Data.Int (Int32, Int64)
 import Control.Arrow (Arrow(first), ArrowChoice (left))
@@ -31,6 +31,7 @@ import GHC.Generics
       type (:*:)(..) )
 import Data.Map(Map)
 import qualified Data.Map as M
+import Data.Data (Proxy(Proxy))
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect
             | DesErrWrongValues String -- ^ Error if prefix is correct, but rest of the message is incorrect
@@ -46,6 +47,9 @@ prefix :: Word8 -> Parser [Word8]
 prefix a = bytes [a,0,0,0]
 
 singleByte = anyWord8
+
+byte2Block :: Parser ByteString
+byte2Block = BS.pack <$> replicateM 2 anyWord8
 
 byte4Block :: Parser ByteString
 byte4Block = BS.pack <$> replicateM 4 anyWord8
@@ -64,14 +68,14 @@ decode4P = byte4Block  >>= (decode >>> either (fail . show) pure)
 class Serializable a where
   -- | Serialization function
   ser :: a -> ByteString
-  default ser :: (Generic a, SerializableGen (Rep a)) => a -> ByteString
+  default ser :: (Generic a, SR (Rep a)) => a -> ByteString
   ser = genericSer
   -- | Deserialization function, default implementation is parsing with a desP parser
   des :: ByteString -> Either DesErr a
   des = parseOnly (desP @a) >>> left DesErrParser
   -- | Deserialization parser
   desP :: Parser a
-  default desP :: (Generic a, SerializableGen (Rep a)) => Parser a
+  default desP :: (Generic a, DS (Rep a)) => Parser a
   desP = genericDesP
 
 instance Serializable () where
@@ -96,8 +100,9 @@ isInt32 :: Int64 -> Bool
 isInt32 = (==) <$> fromIntegral . fromIntegral @Int64 @Int32 <*> id
 
 instance Serializable Int64 where
-  ser n = if isInt32 n then pack [2,0,0,0] <> encode (fromIntegral n :: Int32) -- serialize in 4-byte chunks
-                       else pack [2,0,1,0] <> encode n                         -- serialize in 8-byte chunks
+  ser n = if isInt32 n
+             then pack [2,0,0,0] <> encode (fromIntegral n :: Int32) -- serialize in 4-byte chunks
+             else pack [2,0,1,0] <> encode n                         -- serialize in 8-byte chunks
 
   desP = bytes [2,0,0,0] *> (fromIntegral <$> decode4P @_ @Int32)
      <|> bytes [2,0,1,0] *> decode8P
@@ -106,20 +111,30 @@ instance Serializable Int64 where
 isFloat32 :: Double -> Bool
 isFloat32 = (==) <$> realToFrac . realToFrac @Double @Float <*> id
 
+instance Serializable Int where
+  ser w16 = encode w16 <> BS.pack [0,0]
+  desP = fromIntegral <$> desP @Word32
+
+instance Serializable Word16 where
+  ser w16 = encode w16 <> BS.pack [0,0]
+  desP = fromIntegral <$> desP @Word32
+
+instance Serializable Word32 where
+  ser = encode
+  desP = decode4P
+
 instance Serializable Double where
-  ser x = if isFloat32 x then pack [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
-                         else pack [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
+  ser x = if isFloat32 x
+             then pack [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
+             else pack [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
 
   desP = bytes [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
      <|> bytes [3,0,1,0] *> decode8P
 
-instance (Serializable a, Serializable b) => Serializable (a, b) where
-  ser = genericSer
-  desP = genericDesP
+instance (Serializable a, Serializable b) => Serializable (a, b)
+instance (Serializable a, Serializable b, Serializable c) => Serializable (a, b, c)
+instance (Serializable a, Serializable b, Serializable c, Serializable d) => Serializable (a, b, c, d)
 
--- | Pad 4block to 8block
-pad :: ByteString -> ByteString
-pad = (<> BS.pack [0,0,0,0])
 
 digitsToFull4 :: Integral a => a -> a
 digitsToFull4 n = (4 - n `rem` 4) `rem` 4
@@ -130,7 +145,6 @@ padTo4 bs = bs <> BS.replicate (digitsToFull4 $ BS.length bs) 0
 
 instance {-# OVERLAPS #-} Serializable String where
   ser s = pack [4,0,0,0] <> lenSer s  <> padTo4 (BS.pack $ BS.head . encode <$> s)
-
   desP = do
     prefix 4
     -- Parse length of the array
@@ -176,34 +190,51 @@ instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
     prefix 18
     M.fromList <$> listDesP desP
 
--- | Desialize a 'Generic' value to
-class SerializableGen g where
-  serGen :: g a -> ByteString
-  desGenP :: Parser (g a)
+data ABCD  = A | B | C | D deriving(Generic, Show)
+instance Serializable ABCD
 
-instance SerializableGen g => SerializableGen (M1 x y g) where
-  serGen (M1 v) = serGen v
-  desGenP = M1 <$> desGenP
+-- | Desialize 'Generic' value
+class DS g                                                      where dsGP :: Parser (g a)
+instance DS g => DS (M1 x y g)                                  where dsGP = M1 <$> dsGP
+instance (DS g, DS h, IX g, IX h, SRV g, SRV h) => DS (g :+: h) where dsGP = L1 <$> (word8 0 *> dsGP) <|> R1 <$> (word8 1 *> dsGP)
+instance (DS g, DS h) => DS (g :*: h)                           where dsGP = (:*:) <$> dsGP  <*> dsGP
+instance (Serializable a) => DS (K1 x a)                        where dsGP = K1 <$> desP
+instance DS U1                                                  where dsGP = pure U1
 
-instance (SerializableGen g, SerializableGen h) => SerializableGen (g :+: h) where
-  serGen = \case
-    (L1 x) -> serGen x
-    (R1 y) -> serGen y
-  desGenP = L1 <$> desGenP <|> R1 <$> desGenP
+genericDesP :: (Generic a, DS (Rep a)) => Parser a
+genericDesP = to <$> dsGP
 
-instance (SerializableGen g, SerializableGen h) => SerializableGen (g :*: h) where
-  serGen (x :*: y) = serGen x <> serGen y
-  desGenP = (:*:) <$> desGenP  <*> desGenP
+-- | Serialize 'Generic' value
+class SR g                                                      where srG :: g a -> ByteString
+instance SR g => SR (M1 x y g)                                  where srG (M1 v) = srG v
+instance (SR g, SR h, IX g, IX h, SRV g, SRV h) => SR (g :+: h) where srG v = ser (ix' v) <> (case v of L1 x -> srvG x; R1 y -> srvG y)
+instance (SR g, SR h) => SR (g :*: h)                           where srG (x :*: y) = srG x <> srG y
+instance (Serializable a) => SR (K1 x a)                        where srG (K1 v) = ser v
+instance SR U1                                                  where srG U1 = ""
 
-instance (Serializable a) => SerializableGen (K1 x a) where
-  serGen (K1 v) = ser v
-  desGenP = K1 <$> desP
+genericSer :: (Generic a, SR (Rep a)) => a -> ByteString
+genericSer = srG . from
 
-instance SerializableGen U1 where
-  serGen U1 = ""
-  desGenP = pure U1
+-- | Deserialize inner values
+class SRV g                                          where srvG :: g a -> ByteString
+instance (SRV g, SRV h, IX g, IX h) => SRV (g :+: h) where srvG = \case L1 x -> srvG x; R1 y -> srvG y
+instance (SRV g, SRV h) => SRV (g :*: h)             where srvG (x :*: y) = srvG x <> srvG y
+instance SRV g => SRV (M1 x y g)                     where srvG (M1 v) = srvG v
+instance (Serializable a) => SRV (K1 x a)            where srvG (K1 v) = ser v
+instance SRV U1                                      where srvG U1 = ""
 
-genericSer :: (Generic a, SerializableGen (Rep a)) => a -> ByteString
-genericSer = serGen . from
-genericDesP :: (Generic a, SerializableGen (Rep a)) => Parser a
-genericDesP = to <$> desGenP
+-- | Number of constructors
+class Sized f                                  where size :: Proxy f -> Int32
+instance (Sized f, Sized g) => Sized (f :+: g) where size _ = size (Proxy @f) + size (Proxy @g)
+instance Sized (f :*: g)                       where size _ = 1
+instance Sized (K1 i c)                        where size _ = 1
+instance (Sized f) => Sized (M1 i t f)         where size _ = size (Proxy @f)
+instance Sized U1                              where size _ = 1
+
+-- | Index of a constructor
+class (Sized f) => IX f               where ix' :: f p -> Int32
+instance (IX f, IX g) => IX (f :+: g) where ix' = \case (L1 x) -> ix' x; (R1 x) -> size (Proxy @f) + ix' x
+instance IX (f :*: g)                 where ix' _ = 0
+instance IX (K1 i c)                  where ix' _ = 0
+instance (IX f) => IX (M1 i t f)      where ix' (M1 x) = ix' x
+instance IX U1                        where ix' _ = 0
