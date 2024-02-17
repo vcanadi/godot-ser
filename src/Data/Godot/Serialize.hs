@@ -204,16 +204,16 @@ instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
 -- | Desialize 'Generic' value (sum types are 2-elem. lists [<constructor index>, <value>])
 -- Maybe (Int32,Int32) is used after deserializing constructor index, that number is used to select the appropriate parser for next step
 -- based on the index and total number of constructors
-class DS g                                                      where dsGP :: Maybe (Int32, Int32) -> Parser (g a)
-instance DS g => DS (M1 x y g)                                  where dsGP n = M1 <$> dsGP n
-instance (DS g, DS h, IX g, IX h, DSV g, DSV h) => DS (g :+: h) where dsGP Nothing = dsGP . Just . (,size (Proxy @(g :+: h))) . i32 =<< desP @Int32Cl
-                                                                      dsGP (Just (i,n)) = let k = n `div` 2
-                                                                                           in if i < n `div` 2
-                                                                                               then L1 <$> dsGP (Just (i, k))
-                                                                                               else R1 <$> dsGP (Just (i-k,n-k))
-instance (DS g, DS h) => DS (g :*: h)                           where dsGP n = (:*:) <$> dsGP n <*> dsGP n
-instance (Serializable a) => DS (K1 x a)                        where dsGP _ = K1 <$> desP
-instance DS U1                                                  where dsGP _ = pure U1
+class DS g                                        where dsGP :: Maybe (Int32, Int32) -> Parser (g a)
+instance DS g => DS (M1 x y g)                    where dsGP n = M1 <$> dsGP n
+instance (DS g, DS h, IX g, IX h) => DS (g :+: h) where dsGP Nothing = dsGP . Just . (,size (Proxy @(g :+: h))) . i32 =<< desP @Int32Cl
+                                                        dsGP (Just (i,n)) = let k = n `div` 2
+                                                                              in if i < n `div` 2
+                                                                                then L1 <$> dsGP (Just (i, k))
+                                                                                else R1 <$> dsGP (Just (i-k,n-k))
+instance (DS g, DS h) => DS (g :*: h)             where dsGP n = (:*:) <$> dsGP n <*> dsGP n
+instance (Serializable a) => DS (K1 x a)          where dsGP _ = K1 <$> desP
+instance DS U1                                    where dsGP _ = pure U1
 
 genericDesP :: (Generic a, DS (Rep a)) => Parser a
 genericDesP = to <$> dsGP Nothing
@@ -228,14 +228,6 @@ instance SR U1                                                  where srG U1 = "
 
 genericSer :: (Generic a, SR (Rep a)) => a -> ByteString
 genericSer = srG . from
-
--- | Deserialize inner values (skip constructors)
-class DSV g                                          where dsvP :: Parser (g a)
-instance DSV g => DSV (M1 x y g)                     where dsvP = M1 <$> dsvP
-instance (DSV g, DSV h, IX g, IX h) => DSV (g :+: h) where dsvP = L1 <$> dsvP <|> R1 <$> dsvP
-instance (DSV g, DSV h) => DSV (g :*: h)             where dsvP = (:*:) <$> dsvP <*> dsvP
-instance (Serializable a) => DSV (K1 x a)            where dsvP = K1 <$> desP
-instance DSV U1                                      where dsvP = pure U1
 
 -- | Serialize inner values (skip constructors)
 class SRV g                                          where srvG :: g a -> ByteString
