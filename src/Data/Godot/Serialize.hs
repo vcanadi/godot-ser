@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE KindSignatures  #-}
+{-# LANGUAGE TupleSections  #-}
 
 module Data.Godot.Serialize where
 
@@ -31,7 +33,8 @@ import GHC.Generics
       type (:*:)(..) )
 import Data.Map(Map)
 import qualified Data.Map as M
-import Data.Data (Proxy(Proxy))
+import Data.Proxy (Proxy(Proxy))
+import Data.Foldable (traverse_)
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect
             | DesErrWrongValues String -- ^ Error if prefix is correct, but rest of the message is incorrect
@@ -90,6 +93,14 @@ instance Serializable Bool where
       *> (    bytes [0,0,0,0] $> False
           <|> bytes [1,0,0,0] $> True
          )
+
+-- | Int32 clean. Int32 with serialization instance without prefixes (used for length etc.)
+newtype Int32Cl = Int32Cl { i32 :: Int32 } deriving (Eq, Ord)
+
+instance Serializable Int32Cl where
+  ser = encode . i32
+  desP = Int32Cl <$> decode4P
+
 
 instance Serializable Int32 where
   ser n = pack [2,0,0,0] <> encode n
@@ -190,24 +201,27 @@ instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
     prefix 18
     M.fromList <$> listDesP desP
 
-data ABCD  = A | B | C | D deriving(Generic, Show)
-instance Serializable ABCD
-
--- | Desialize 'Generic' value
-class DS g                                                      where dsGP :: Parser (g a)
-instance DS g => DS (M1 x y g)                                  where dsGP = M1 <$> dsGP
-instance (DS g, DS h, IX g, IX h, SRV g, SRV h) => DS (g :+: h) where dsGP = L1 <$> (word8 0 *> dsGP) <|> R1 <$> (word8 1 *> dsGP)
-instance (DS g, DS h) => DS (g :*: h)                           where dsGP = (:*:) <$> dsGP  <*> dsGP
-instance (Serializable a) => DS (K1 x a)                        where dsGP = K1 <$> desP
-instance DS U1                                                  where dsGP = pure U1
+-- | Desialize 'Generic' value (sum types are 2-elem. lists [<constructor index>, <value>])
+-- Maybe (Int32,Int32) is used after deserializing constructor index, that number is used to select the appropriate parser for next step
+-- based on the index and total number of constructors
+class DS g                                                      where dsGP :: Maybe (Int32, Int32) -> Parser (g a)
+instance DS g => DS (M1 x y g)                                  where dsGP n = M1 <$> dsGP n
+instance (DS g, DS h, IX g, IX h, DSV g, DSV h) => DS (g :+: h) where dsGP Nothing = dsGP . Just . (,size (Proxy @(g :+: h))) . i32 =<< desP @Int32Cl
+                                                                      dsGP (Just (i,n)) = let k = n `div` 2
+                                                                                           in if i < n `div` 2
+                                                                                               then L1 <$> dsGP (Just (i, k))
+                                                                                               else R1 <$> dsGP (Just (i-k,n-k))
+instance (DS g, DS h) => DS (g :*: h)                           where dsGP n = (:*:) <$> dsGP n <*> dsGP n
+instance (Serializable a) => DS (K1 x a)                        where dsGP _ = K1 <$> desP
+instance DS U1                                                  where dsGP _ = pure U1
 
 genericDesP :: (Generic a, DS (Rep a)) => Parser a
-genericDesP = to <$> dsGP
+genericDesP = to <$> dsGP Nothing
 
--- | Serialize 'Generic' value
+-- | Serialize 'Generic' value (sum types are 2-elem. lists [<constructor index>, <value>])
 class SR g                                                      where srG :: g a -> ByteString
 instance SR g => SR (M1 x y g)                                  where srG (M1 v) = srG v
-instance (SR g, SR h, IX g, IX h, SRV g, SRV h) => SR (g :+: h) where srG v = ser (ix' v) <> (case v of L1 x -> srvG x; R1 y -> srvG y)
+instance (SR g, SR h, IX g, IX h, SRV g, SRV h) => SR (g :+: h) where srG v = ser (Int32Cl $ ix' v) <> srvG v
 instance (SR g, SR h) => SR (g :*: h)                           where srG (x :*: y) = srG x <> srG y
 instance (Serializable a) => SR (K1 x a)                        where srG (K1 v) = ser v
 instance SR U1                                                  where srG U1 = ""
@@ -215,7 +229,15 @@ instance SR U1                                                  where srG U1 = "
 genericSer :: (Generic a, SR (Rep a)) => a -> ByteString
 genericSer = srG . from
 
--- | Deserialize inner values
+-- | Deserialize inner values (skip constructors)
+class DSV g                                          where dsvP :: Parser (g a)
+instance DSV g => DSV (M1 x y g)                     where dsvP = M1 <$> dsvP
+instance (DSV g, DSV h, IX g, IX h) => DSV (g :+: h) where dsvP = L1 <$> dsvP <|> R1 <$> dsvP
+instance (DSV g, DSV h) => DSV (g :*: h)             where dsvP = (:*:) <$> dsvP <*> dsvP
+instance (Serializable a) => DSV (K1 x a)            where dsvP = K1 <$> desP
+instance DSV U1                                      where dsvP = pure U1
+
+-- | Serialize inner values (skip constructors)
 class SRV g                                          where srvG :: g a -> ByteString
 instance (SRV g, SRV h, IX g, IX h) => SRV (g :+: h) where srvG = \case L1 x -> srvG x; R1 y -> srvG y
 instance (SRV g, SRV h) => SRV (g :*: h)             where srvG (x :*: y) = srvG x <> srvG y
@@ -224,7 +246,7 @@ instance (Serializable a) => SRV (K1 x a)            where srvG (K1 v) = ser v
 instance SRV U1                                      where srvG U1 = ""
 
 -- | Number of constructors
-class Sized f                                  where size :: Proxy f -> Int32
+class Sized (f :: * -> *)                      where size :: Proxy f -> Int32
 instance (Sized f, Sized g) => Sized (f :+: g) where size _ = size (Proxy @f) + size (Proxy @g)
 instance Sized (f :*: g)                       where size _ = 1
 instance Sized (K1 i c)                        where size _ = 1
@@ -232,7 +254,7 @@ instance (Sized f) => Sized (M1 i t f)         where size _ = size (Proxy @f)
 instance Sized U1                              where size _ = 1
 
 -- | Index of a constructor
-class (Sized f) => IX f               where ix' :: f p -> Int32
+class (Sized f) => IX (f :: * -> *)   where ix' :: f p -> Int32
 instance (IX f, IX g) => IX (f :+: g) where ix' = \case (L1 x) -> ix' x; (R1 x) -> size (Proxy @f) + ix' x
 instance IX (f :*: g)                 where ix' _ = 0
 instance IX (K1 i c)                  where ix' _ = 0
