@@ -10,9 +10,12 @@ import Data.ByteString (ByteString)
 import Data.Typeable (typeRep, Typeable)
 import Data.Proxy (Proxy(Proxy))
 import qualified Data.Map as M
-import Data.Word (Word8)
+import Data.Word (Word8, Word32, Word16)
 import Data.Foldable (traverse_)
 import Control.Monad (zipWithM_)
+import Data.Map (Map)
+
+-- Sample types
 
 newtype AInt32 = AInt32 Int32 deriving(Generic, Show, Eq)
 instance Serializable AInt32
@@ -22,7 +25,21 @@ data IntOrBool
   | IOBBool Bool
   deriving(Generic, Show, Eq, Serializable)
 
-data Complex = Complex Double Double deriving (Generic,Show, Eq, Serializable)
+data Complex = Complex Double Double deriving (Generic, Show, Eq, Serializable)
+
+newtype PortNumber = PortNumber Word16 deriving (Ord, Generic, Show, Eq)
+instance Serializable PortNumber
+
+type HostAddr = Word32
+data SockAddr
+  = SockAddrInet PortNumber HostAddr
+  | SockAddrUnix String
+  deriving (Ord, Generic, Show, Eq, Serializable)
+
+data Msg
+  = Join
+  | State (Map SockAddr (Int,Int))
+  | Leave deriving (Generic, Show, Eq, Serializable)
 
 data X1  = X10                                                                                     deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
 data X2  = X20 | X21                                                                               deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
@@ -59,10 +76,10 @@ spec :: Spec
 spec = describe "Samples:" $ do
   specPrimitives
   specString
-  specCustomTypes
   specList
   specMap
   specGenerics
+  specCustomTypes
 
 specPrimitives :: Spec
 specPrimitives =
@@ -85,15 +102,6 @@ specString = describe "String:" $ do
   ("abc"::String)   `shouldSerDesTo` [4,0,0,0 ,3,0,0,0 ,97,98,99,0]
   ("abcd"::String)  `shouldSerDesTo` [4,0,0,0 ,4,0,0,0 ,97,98,99,100]
   ("abcde"::String) `shouldSerDesTo` [4,0,0,0 ,5,0,0,0 ,97,98,99,100,101,0,0,0]
-
-specCustomTypes :: Spec
-specCustomTypes =
-  describe "Custom types:" $ describe "Custom types:" $ do
-  AInt32 10    `shouldSerDesTo` [2,0,0,0, 10,0,0,0]
-  AInt32 20    `shouldSerDesTo` [2,0,0,0 ,20,0,0,0]
-  IOBInt 10    `shouldSerDesTo` [0,0,0,0, 2,0,0,0 ,10,0,0,0] -- sum type's first constructor
-  IOBBool True `shouldSerDesTo` [1,0,0,0, 1,0,0,0 ,1,0,0,0]  -- sum type's second constructor
-  Complex 1 2  `shouldSerDesTo` [3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
 
 specList :: Spec
 specList =
@@ -196,5 +204,34 @@ specGenerics = describe "Xnk" $ do
 
       allVals :: (Enum a, Bounded a) => [a]
       allVals = [minBound..maxBound]
+
+specCustomTypes :: Spec
+specCustomTypes =
+  describe "Custom types:" $ do
+    describe "AInt32" $ do
+      AInt32 10 `shouldSerDesTo` [2,0,0,0, 10,0,0,0]
+      AInt32 20 `shouldSerDesTo` [2,0,0,0 ,20,0,0,0]
+    describe "IntOrBool" $ do
+      IOBInt 10    `shouldSerDesTo` [0,0,0,0, 2,0,0,0 ,10,0,0,0] -- sum type's first constructor
+      IOBBool True `shouldSerDesTo` [1,0,0,0, 1,0,0,0 ,1,0,0,0]  -- sum type's second constructor
+    describe "Complex" $ do
+      Complex 1 2 `shouldSerDesTo` [3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
+    describe "Msg" $ do
+      Join `shouldSerDesTo` [0,0,0,0]
+      State (M.fromList
+        [
+          ( SockAddrInet (PortNumber 88) 127
+          , (66,77))
+        ])
+        `shouldSerDesTo`
+        [1,0,0,0                 -- 1. constructor (State) of Msg
+          ,18,0,0,0 ,1,0,0,0     -- Map of 1 elements
+            ,0,0,0,0             -- 0. constructor of SockAddr
+              ,2,0,0,0,88,0,0,0  -- PortNumber
+              ,2,0,0,0,127,0,0,0 -- Host
+            ,2,0,0,0 ,66,0,0,0   -- fst Int
+            ,2,0,0,0 ,77,0,0,0   -- snd Int
+        ]
+      Leave `shouldSerDesTo` [2,0,0,0]
 
 
