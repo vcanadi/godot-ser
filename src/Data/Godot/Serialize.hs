@@ -123,29 +123,30 @@ isFloat32 :: Double -> Bool
 isFloat32 = (==) <$> realToFrac . realToFrac @Double @Float <*> id
 
 instance Serializable Int where
-  ser w16 = encode w16 <> BS.pack [0,0]
-  desP = fromIntegral <$> desP @Word32
+  ser = ser @Int64 . fromIntegral
+  desP = fromIntegral <$> desP @Int64
 
 instance Serializable Word16 where
-  ser w16 = encode w16 <> BS.pack [0,0]
-  desP = fromIntegral <$> desP @Word32
+  ser = ser @Int32 . fromIntegral
+  desP = fromIntegral <$> desP @Int32
 
 instance Serializable Word32 where
-  ser = encode
-  desP = decode4P
+  ser = ser @Int32 . fromIntegral
+  desP = fromIntegral <$> desP @Int32
 
 instance Serializable Double where
   ser x = if isFloat32 x
              then pack [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
              else pack [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
-
   desP = bytes [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
      <|> bytes [3,0,1,0] *> decode8P
+
+serBytes :: (Serializable a) => a -> [Word8]
+serBytes = BS.unpack . ser
 
 instance (Serializable a, Serializable b) => Serializable (a, b)
 instance (Serializable a, Serializable b, Serializable c) => Serializable (a, b, c)
 instance (Serializable a, Serializable b, Serializable c, Serializable d) => Serializable (a, b, c, d)
-
 
 digitsToFull4 :: Integral a => a -> a
 digitsToFull4 n = (4 - n `rem` 4) `rem` 4
