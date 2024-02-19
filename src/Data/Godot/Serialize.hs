@@ -43,30 +43,34 @@ data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode 
             | DesErrDecoder PeekException
             deriving(Show, Eq)
 
-bytes :: [Word8] -> Parser [Word8]
-bytes = traverse word8
+bytes :: [Word8] -> ByteString
+bytes = pack
 
-prefix :: Word8 -> Parser [Word8]
-prefix a = bytes [a,0,0,0]
+prefix :: Word8 -> ByteString
+prefix n =  bytes [n,0,0,0]
 
+bytesP :: [Word8] -> Parser [Word8]
+bytesP = traverse word8
+
+prefixP :: Word8 -> Parser [Word8]
+prefixP a = bytesP [a,0,0,0]
+
+singleByte :: Parser Word8
 singleByte = anyWord8
 
-byte2Block :: Parser ByteString
-byte2Block = BS.pack <$> replicateM 2 anyWord8
+any4BytesP :: Parser ByteString
+any4BytesP = BS.pack <$> replicateM 4 anyWord8
 
-byte4Block :: Parser ByteString
-byte4Block = BS.pack <$> replicateM 4 anyWord8
-
-byte8Block :: Parser ByteString
-byte8Block = BS.pack <$> replicateM 8 anyWord8
+any8BytesP :: Parser ByteString
+any8BytesP = BS.pack <$> replicateM 8 anyWord8
 
 -- | Parser that uses Store's decode function and channels decoding error accordingly
 decode8P :: forall m a. (Store a) => Parser a
-decode8P = byte8Block  >>= (decode >>> either (fail . show) pure)
+decode8P = any8BytesP  >>= (decode >>> either (fail . show) pure)
 
 -- | 4 byte version of decodeP
 decode4P :: forall m a. (Store a) => Parser a
-decode4P = byte4Block  >>= (decode >>> either (fail . show) pure)
+decode4P = any4BytesP  >>= (decode >>> either (fail . show) pure)
 
 class Serializable a where
   -- | Serialization function
@@ -82,16 +86,16 @@ class Serializable a where
   desP = genericDesP
 
 instance Serializable () where
-  ser () = pack [0,0,0,0]
-  desP = void $ prefix 0
+  ser () = bytes [0,0,0,0]
+  desP = void $ prefixP 0
 
 
 instance Serializable Bool where
-  ser False = pack [1,0,0,0,0,0,0,0]
-  ser True  = pack [1,0,0,0,1,0,0,0]
-  desP = prefix 1
-      *> (    bytes [0,0,0,0] $> False
-          <|> bytes [1,0,0,0] $> True
+  ser False = bytes [1,0,0,0,0,0,0,0]
+  ser True  = bytes [1,0,0,0,1,0,0,0]
+  desP = prefixP 1
+      *> (    bytesP [0,0,0,0] $> False
+          <|> bytesP [1,0,0,0] $> True
          )
 
 -- | Int32 clean. Int32 with serialization instance without prefixes (used for length etc.)
@@ -103,8 +107,8 @@ instance Serializable Int32Cl where
 
 
 instance Serializable Int32 where
-  ser n = pack [2,0,0,0] <> encode n
-  desP = prefix 2 *> decode4P
+  ser n = bytes [2,0,0,0] <> encode n
+  desP = prefixP 2 *> decode4P
 
 -- | Check if Int64 is inside subset of Int32 numbers
 isInt32 :: Int64 -> Bool
@@ -112,11 +116,11 @@ isInt32 = (==) <$> fromIntegral . fromIntegral @Int64 @Int32 <*> id
 
 instance Serializable Int64 where
   ser n = if isInt32 n
-             then pack [2,0,0,0] <> encode (fromIntegral n :: Int32) -- serialize in 4-byte chunks
-             else pack [2,0,1,0] <> encode n                         -- serialize in 8-byte chunks
+             then bytes [2,0,0,0] <> encode (fromIntegral n :: Int32) -- serialize in 4-byte chunks
+             else bytes [2,0,1,0] <> encode n                         -- serialize in 8-byte chunks
 
-  desP = bytes [2,0,0,0] *> (fromIntegral <$> decode4P @_ @Int32)
-     <|> bytes [2,0,1,0] *> decode8P
+  desP = bytesP [2,0,0,0] *> (fromIntegral <$> decode4P @_ @Int32)
+     <|> bytesP [2,0,1,0] *> decode8P
 
 -- | Check if Double (float 64) is inside the subset of Float (float 32) numbers
 isFloat32 :: Double -> Bool
@@ -136,10 +140,10 @@ instance Serializable Word32 where
 
 instance Serializable Double where
   ser x = if isFloat32 x
-             then pack [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
-             else pack [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
-  desP = bytes [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
-     <|> bytes [3,0,1,0] *> decode8P
+             then bytes [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
+             else bytes [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
+  desP = bytesP [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
+     <|> bytesP [3,0,1,0] *> decode8P
 
 serBytes :: (Serializable a) => a -> [Word8]
 serBytes = BS.unpack . ser
@@ -156,9 +160,9 @@ padTo4 :: ByteString -> ByteString
 padTo4 bs = bs <> BS.replicate (digitsToFull4 $ BS.length bs) 0
 
 instance {-# OVERLAPS #-} Serializable String where
-  ser s = pack [4,0,0,0] <> lenSer s  <> padTo4 (BS.pack $ BS.head . encode <$> s)
+  ser s = bytes [4,0,0,0] <> lenSer s  <> padTo4 (BS.pack $ BS.head . encode <$> s)
   desP = do
-    prefix 4
+    prefixP 4
     -- Parse length of the array
     (n :: Int32) <- decode4P
     res <- nTimesP charP n
@@ -185,8 +189,8 @@ listDesP p = do
 
 -- | Serializable instance for List
 instance {-# OVERLAPPABLE #-} Serializable a => Serializable [a] where
-  ser = (pack [28,0,0,0] <>) . listSer
-  desP = prefix 28 *> listDesP desP
+  ser = (prefix 28<>) . listSer
+  desP = prefixP 28 *> listDesP desP
 
 -- | Parse something n times
 nTimesP :: Parser a -> Int32 -> Parser [a]
@@ -197,12 +201,12 @@ nTimesP p n = (:) <$> p <*> nTimesP p (pred n)
 
 -- | Serializable instance for List
 instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
-  ser xs = pack [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
+  ser xs = bytes [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
   desP = do
-    prefix 18
+    prefixP 18
     M.fromList <$> listDesP desP
 
--- | Desialize 'Generic' value (sum types are 2-elem. lists [<constructor index>, <value>])
+-- | Desialize 'Generic' value (sum type serialization is prefixed with constructor index)
 -- Maybe (Int32,Int32) is used after deserializing constructor index, that number is used to select the appropriate parser for next step
 -- based on the index and total number of constructors
 class DS g                                        where dsGP :: Maybe (Int32, Int32) -> Parser (g a)
@@ -219,7 +223,7 @@ instance DS U1                                    where dsGP _ = pure U1
 genericDesP :: (Generic a, DS (Rep a)) => Parser a
 genericDesP = to <$> dsGP Nothing
 
--- | Serialize 'Generic' value (sum types are 2-elem. lists [<constructor index>, <value>])
+-- | Serialize 'Generic' value <constructor index> <constructor payloads>
 class SR g                                                      where srG :: g a -> ByteString
 instance SR g => SR (M1 x y g)                                  where srG (M1 v) = srG v
 instance (SR g, SR h, IX g, IX h, SRV g, SRV h) => SR (g :+: h) where srG v = ser (Int32Cl $ ix' v) <> srvG v
