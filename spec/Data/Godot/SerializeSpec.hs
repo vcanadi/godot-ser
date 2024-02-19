@@ -200,7 +200,7 @@ specGenerics = describe "Xnk" $ do
   zipWithM_ shouldSerDesTo (allVals @XF) (ixsLessThan 15)
     where
       ixsLessThan :: Word8 -> [[Word8]]
-      ixsLessThan n = [[i,0,0,0] | i <- [0..pred n]]
+      ixsLessThan n = [[28,0,0,0 ,1,0,0,0 ,2,0,0,0 ,i,0,0,0] | i <- [0..pred n]]
 
       allVals :: (Enum a, Bounded a) => [a]
       allVals = [minBound..maxBound]
@@ -212,26 +212,38 @@ specCustomTypes =
       AInt32 10 `shouldSerDesTo` [2,0,0,0, 10,0,0,0]
       AInt32 20 `shouldSerDesTo` [2,0,0,0 ,20,0,0,0]
     describe "IntOrBool" $ do
-      IOBInt 10    `shouldSerDesTo` [0,0,0,0, 2,0,0,0 ,10,0,0,0] -- sum type's first constructor
-      IOBBool True `shouldSerDesTo` [1,0,0,0, 1,0,0,0 ,1,0,0,0]  -- sum type's second constructor
+      IOBInt 10    `shouldSerDesTo` [28,0,0,0,2,0,0,0     -- Serialize sum type as godot's array of len 2 (constructor index * single payload constructor field)
+                                      ,2,0,0,0, 0,0,0,0   -- Fst elem is constructor's index (Int32 serialization)
+                                      ,2,0,0,0 ,10,0,0,0] -- Snd elem is constructor payload
+      IOBBool True `shouldSerDesTo` [28,0,0,0,2,0,0,0
+                                      ,2,0,0,0, 1,0,0,0
+                                      ,1,0,0,0 ,1,0,0,0]
     describe "Complex" $ do
       Complex 1 2 `shouldSerDesTo` [3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
     describe "Msg" $ do
-      Join `shouldSerDesTo` [0,0,0,0]
+      Join
+        `shouldSerDesTo`
+        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array
+          ,2,0,0,0 ,0,0,0,0]       -- 0. constructor (State) of Msg
       State (M.fromList
         [
           ( SockAddrInet (PortNumber 88) 127
           , (66,77))
         ])
         `shouldSerDesTo`
-        [1,0,0,0                 -- 1. constructor (State) of Msg
-          ,18,0,0,0 ,1,0,0,0     -- Map of 1 elements
-            ,0,0,0,0             -- 0. constructor of SockAddr
-              ,2,0,0,0,88,0,0,0  -- PortNumber
-              ,2,0,0,0,127,0,0,0 -- Host
-            ,2,0,0,0 ,66,0,0,0   -- fst Int
-            ,2,0,0,0 ,77,0,0,0   -- snd Int
+        [ 28,0,0,0 ,2,0,0,0        -- State is serialized as 2-elem array
+            ,2,0,0,0 ,1,0,0,0      -- 1. constructor (State) of Msg
+            ,18,0,0,0 ,1,0,0,0     -- Map of 1 elements
+              ,28,0,0,0 ,3,0,0,0   -- HostAddr is serialized as 3-elem array
+                ,2,0,0,0 ,0,0,0,0  -- 0. constructor (SockAddrInet) of HostAddr
+                ,2,0,0,0,88,0,0,0  -- PortNumber
+                ,2,0,0,0,127,0,0,0 -- Host
+              ,2,0,0,0 ,66,0,0,0   -- fst Int
+              ,2,0,0,0 ,77,0,0,0   -- snd Int
         ]
-      Leave `shouldSerDesTo` [2,0,0,0]
+      Leave
+        `shouldSerDesTo`
+        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array
+          ,2,0,0,0 ,2,0,0,0]       -- 0. constructor (State) of Msg
 
 
