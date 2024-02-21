@@ -41,6 +41,15 @@ data Msg
   | State (Map SockAddr (Int,Int))
   | Leave deriving (Generic, Show, Eq, Serializable)
 
+data Dir = L | R | U | D deriving (Show, Eq, Generic, Enum, Bounded, Read, Serializable)
+
+data CliMsg
+  = CLI_JOIN
+  | CLI_LEAVE
+  | CLI_MOVE Dir
+  | CLI_GET_STATE
+  deriving (Show, Eq, Read, Generic, Serializable)
+
 data X1  = X10                                                                                     deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
 data X2  = X20 | X21                                                                               deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
 data X3  = X30 | X31 | X32                                                                         deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
@@ -200,7 +209,7 @@ specGenerics = describe "Xnk" $ do
   zipWithM_ shouldSerDesTo (allVals @XF) (ixsLessThan 15)
     where
       ixsLessThan :: Word8 -> [[Word8]]
-      ixsLessThan n = [[28,0,0,0 ,1,0,0,0 ,2,0,0,0 ,i,0,0,0] | i <- [0..pred n]]
+      ixsLessThan n = [[2,0,0,0 ,i,0,0,0] | i <- [0..pred n]]
 
       allVals :: (Enum a, Bounded a) => [a]
       allVals = [minBound..maxBound]
@@ -245,5 +254,21 @@ specCustomTypes =
         `shouldSerDesTo`
         [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array
           ,2,0,0,0 ,2,0,0,0]       -- 0. constructor (State) of Msg
+
+    describe "CliMsg" $ do
+      CLI_JOIN
+        `shouldSerDesTo`
+        [28,0,0,0, 1,0,0,0
+          ,2,0,0,0 ,0,0,0,0]
+      CLI_LEAVE
+        `shouldSerDesTo`
+        [28,0,0,0, 1,0,0,0
+          ,2,0,0,0 ,1,0,0,0]
+      CLI_MOVE L
+        `shouldSerDesTo`
+        [28,0,0,0, 2,0,0,0
+          ,2,0,0,0 ,2,0,0,0
+          ,2,0,0,0, 0,0,0,0
+          ]
 
 
