@@ -44,11 +44,15 @@ data Msg
 data Dir = L | R | U | D deriving (Show, Eq, Generic, Enum, Bounded, Read, Serializable)
 
 data CliMsg
-  = CLI_JOIN
-  | CLI_LEAVE
-  | CLI_MOVE Dir
-  | CLI_GET_STATE
+  = JOIN
+  | LEAVE
+  | MOVE Dir
+  | GET_STATE
   deriving (Show, Eq, Read, Generic, Serializable)
+
+type State = Map Int Bool
+
+newtype SrvMsg = PUT_STATE State deriving (Show, Eq, Generic, Serializable)
 
 data X1  = X10                                                                                     deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
 data X2  = X20 | X21                                                                               deriving(Eq, Generic, Show, Enum, Bounded, Serializable)
@@ -139,7 +143,7 @@ specMap =
   describe "Map:" $ do
     M.fromList [(10::Int32,100::Int32)]
        `shouldSerDesTo`
-       [18,0,0,0
+       [28,0,0,0
          ,1,0,0,0
            ,2,0,0,0
              ,10,0,0,0
@@ -148,7 +152,7 @@ specMap =
     M.fromList [(10::Int32,100::Int32)
                ,(20       ,200)]
       `shouldSerDesTo`
-      [18,0,0,0
+      [28,0,0,0
         ,2,0,0,0
           ,2,0,0,0
             ,10,0,0,0
@@ -242,7 +246,7 @@ specCustomTypes =
         `shouldSerDesTo`
         [ 28,0,0,0 ,2,0,0,0        -- State is serialized as 2-elem array
             ,2,0,0,0 ,1,0,0,0      -- 1. constructor (State) of Msg
-            ,18,0,0,0 ,1,0,0,0     -- Map of 1 elements
+            ,28,0,0,0 ,1,0,0,0     -- Map of 1 elements
               ,28,0,0,0 ,3,0,0,0   -- HostAddr is serialized as 3-elem array
                 ,2,0,0,0 ,0,0,0,0  -- 0. constructor (SockAddrInet) of HostAddr
                 ,2,0,0,0,88,0,0,0  -- PortNumber
@@ -256,19 +260,27 @@ specCustomTypes =
           ,2,0,0,0 ,2,0,0,0]       -- 0. constructor (State) of Msg
 
     describe "CliMsg" $ do
-      CLI_JOIN
+      JOIN
         `shouldSerDesTo`
         [28,0,0,0, 1,0,0,0
           ,2,0,0,0 ,0,0,0,0]
-      CLI_LEAVE
+      LEAVE
         `shouldSerDesTo`
         [28,0,0,0, 1,0,0,0
           ,2,0,0,0 ,1,0,0,0]
-      CLI_MOVE L
+      MOVE L
         `shouldSerDesTo`
         [28,0,0,0, 2,0,0,0
           ,2,0,0,0 ,2,0,0,0
           ,2,0,0,0, 0,0,0,0
+          ]
+
+    describe "SrvMsg" $ do
+      PUT_STATE (M.fromList [(10,True)])
+        `shouldSerDesTo`
+        [28,0,0,0, 1,0,0,0
+          ,2,0,0,0 ,10,0,0,0
+          ,1,0,0,0, 1,0,0,0
           ]
 
 

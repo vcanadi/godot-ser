@@ -189,7 +189,7 @@ listDesP p = do
   -- Parse length of the array
   decode4P @Int32 >>= nTimesP p
 
--- | Serializable instance for List
+-- | Serializable instance for List (OVERLAPPABLE because of String == [Char])
 instance {-# OVERLAPPABLE #-} Serializable a => Serializable [a] where
   ser = (prefix 28<>) . listSer
   desP = prefixP 28 *> listDesP desP
@@ -201,11 +201,18 @@ nTimesP p n = (:) <$> p <*> nTimesP p (pred n)
 
 -- Map serialization
 
--- | Serializable instance for List
-instance (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
+-- | Serializable instance for dictionary
+instance {-# OVERLAPS #-} Serializable a => Serializable (Map String a) where
   ser xs = bytes [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
   desP = do
     prefixP 18
+    M.fromList <$> listDesP desP
+
+-- | Serializable instance for any map (as godot's object with unlimited fields of type (a,b,), i.e. as list )
+instance {-# OVERLAPPABLE #-} (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
+  ser xs = bytes [28,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
+  desP = do
+    prefixP 28
     M.fromList <$> listDesP desP
 
 
