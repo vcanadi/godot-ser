@@ -107,6 +107,12 @@ instance Serializable Int32Cl where
   ser = encode . i32
   desP = Int32Cl <$> decode4P
 
+-- | Tuple with serialization instance without prefixes (used for pair ser/des in map as list)
+newtype TupleCl a b = TupleCl { tpl :: (a,b) } deriving (Eq, Ord)
+
+instance (Serializable a, Serializable b) => Serializable (TupleCl a b) where
+  ser (TupleCl (x,y)) = ser x <> ser y
+  desP = fmap TupleCl $ (,) <$> desP <*> desP
 
 instance Serializable Int32 where
   ser n = bytes [2,0,0,0] <> encode n
@@ -150,9 +156,10 @@ instance Serializable Double where
 serBytes :: (Serializable a) => a -> [Word8]
 serBytes = BS.unpack . ser
 
-instance (Serializable a, Serializable b) => Serializable (a, b)
-instance (Serializable a, Serializable b, Serializable c) => Serializable (a, b, c)
-instance (Serializable a, Serializable b, Serializable c, Serializable d) => Serializable (a, b, c, d)
+-- | Serialize 2-tuple as two element heterogeneous list (as would godot represent it)
+instance (Serializable a, Serializable b) => Serializable (a, b) where
+  ser (x,y) = prefix 28 <> ser (Int32Cl 2) <> ser x <> ser y
+  desP = prefixP 28 *> bytesP [2,0,0,0] *> ((,) <$> desP <*> desP)
 
 digitsToFull4 :: Integral a => a -> a
 digitsToFull4 n = (4 - n `rem` 4) `rem` 4
@@ -201,14 +208,15 @@ nTimesP p n = (:) <$> p <*> nTimesP p (pred n)
 
 -- Map serialization
 
--- | Serializable instance for dictionary
+-- | Serializable instance for dictionary (prefix 18, length and string/value pairs)
 instance {-# OVERLAPS #-} Serializable a => Serializable (Map String a) where
-  ser xs = bytes [18,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
+  ser xs = bytes [18,0,0,0] <> lenSer xs <> foldMap (ser . TupleCl) (M.toList xs)
   desP = do
     prefixP 18
-    M.fromList <$> listDesP desP
+    M.fromList . fmap tpl <$> listDesP desP
 
 -- | Serializable instance for any map (as godot's object with unlimited fields of type (a,b,), i.e. as list )
+-- prefix 28 (list), length and sequence of lists (representing tuples)
 instance {-# OVERLAPPABLE #-} (Serializable a, Serializable b, Ord a) => Serializable (Map a b) where
   ser xs = bytes [28,0,0,0] <> lenSer xs <> foldMap ser (M.toList xs)
   desP = do
@@ -229,7 +237,8 @@ instance (DS f, DS g, IX f, IX g
                                                                      in if i < n `div` 2
                                                                        then L1 <$> dsGP (Just (i, k))
                                                                        else R1 <$> dsGP (Just (i-k,n-k))
-instance (DS f, DS g) => DS (f :*: g)    where dsGP n = (:*:) <$> dsGP n <*> dsGP n
+instance (DS f, DS g) => DS (f :*: g)    where dsGP Nothing = prefixP 17 *> desP @Int32Cl *> ((:*:) <$> dsGP (Just (0,0)) <*> dsGP (Just (0,0)))
+                                               dsGP n       = (:*:) <$> dsGP n <*> dsGP n
 instance (Serializable a) => DS (K1 x a) where dsGP _ = K1 <$> desP
 instance DS U1                           where dsGP _ = pure U1
 
@@ -237,14 +246,17 @@ genericDesP :: (Generic a, DS (Rep a)) => Parser a
 genericDesP = to <$> dsGP Nothing
 
 -- | Serialize 'Generic' value <constructor index> <constructor payloads>
+-- For sum type make an exception if all constructors are 0-arry
+-- Serialize pure product (not sum of products) as object (17)
 class SR f                               where srG :: f a -> ByteString
 instance SR f => SR (M1 x y f)           where srG (M1 v) = srG v
-instance (SR f, SR g, IX f, IX g
-         , SRV f, SRV g, SizeH f
-         , SizeH g, MaxSizeH (f :+: g)
+instance (IX f, IX g, SRV (f :+: g)
+         , SizeH (f:+:g)
+         , MaxSizeH (f :+: g)
          ) => SR (f :+: g)               where srG v = (if maxSizeH (Proxy @(f :+: g)) > 0 then prefix 28 <> ser (Int32Cl $ sizeH v + 1) else "")
                                                     <> ser (ix' v) <> srvG v
-instance (SR f, SR g) => SR (f :*: g)    where srG (x :*: y) = srG x <> srG y
+instance (SRV (f :*: g), SizeH (f :*: g)
+         ) => SR (f :*: g)               where srG v = prefix 17 <> ser (Int32Cl $ sizeH v ) <> srvG v
 instance (Serializable a) => SR (K1 x a) where srG (K1 v) = ser v
 instance SR U1                           where srG U1 = ""
 

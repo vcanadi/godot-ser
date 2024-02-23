@@ -106,7 +106,7 @@ specPrimitives =
     (1 :: Double)         `shouldSerDesTo` [3,0,0,0 ,0,0,128,63]
     (2 :: Double)         `shouldSerDesTo` [3,0,0,0 ,0,0,0,64]
     (1.1 :: Double)       `shouldSerDesTo` [3,0,1,0 ,154,153,153,153,153,153,241,63]
-    (10::Int32,20::Int32) `shouldSerDesTo` [2,0,0,0,10,0,0,0 ,2,0,0,0,20,0,0,0]
+    -- (10::Int32,20::Int32) `shouldSerDesTo` [2,0,0,0,10,0,0,0 ,2,0,0,0,20,0,0,0]
 
 specString :: Spec
 specString = describe "String:" $ do
@@ -141,49 +141,54 @@ specList =
 specMap :: Spec
 specMap =
   describe "Map:" $ do
-    M.fromList [(10::Int32,100::Int32)]
-       `shouldSerDesTo`
-       [28,0,0,0
-         ,1,0,0,0
-           ,2,0,0,0
-             ,10,0,0,0
-           ,2,0,0,0
-             ,100,0,0,0]
-    M.fromList [(10::Int32,100::Int32)
-               ,(20       ,200)]
-      `shouldSerDesTo`
-      [28,0,0,0
-        ,2,0,0,0
+    describe "General Map:" $ do
+      M.fromList [(10::Int32,100::Int32)]
+         `shouldSerDesTo`
+         [28,0,0,0
+           ,1,0,0,0
+             ,28,0,0,0, 2,0,0,0
+               ,2,0,0,0
+                 ,10,0,0,0
+               ,2,0,0,0
+                 ,100,0,0,0]
+      M.fromList [(10::Int32,100::Int32)
+                 ,(20       ,200)]
+        `shouldSerDesTo`
+        [28,0,0,0
           ,2,0,0,0
-            ,10,0,0,0
-          ,2,0,0,0
-            ,100,0,0,0
-          ,2,0,0,0
-            ,20,0,0,0
-          ,2,0,0,0
-            ,200,0,0,0]
-    M.fromList [("a"::String,100::Int32)]
-       `shouldSerDesTo`
-       [18,0,0,0
-         ,1,0,0,0
-           ,4,0,0,0,1,0,0,0,97,0,0,0
-           ,2,0,0,0
-             ,100,0,0,0]
-    M.fromList [("a"::String,100::Int32)
-               ,("b"        ,200)
-               ,("c"        ,300)]
-       `shouldSerDesTo`
-       [18,0,0,0
-         ,3,0,0,0
-           ,4,0,0,0,1,0,0,0,97,0,0,0
-           ,2,0,0,0
-             ,100,0,0,0
-           ,4,0,0,0,1,0,0,0,98,0,0,0
-           ,2,0,0,0
-             ,200,0,0,0
-           ,4,0,0,0,1,0,0,0,99,0,0,0
-           ,2,0,0,0
-             ,44,1,0,0]
+            ,28,0,0,0, 2,0,0,0
+              ,2,0,0,0
+                ,10,0,0,0
+              ,2,0,0,0
+                ,100,0,0,0
+            ,28,0,0,0, 2,0,0,0
+              ,2,0,0,0
+                ,20,0,0,0
+              ,2,0,0,0
+                ,200,0,0,0]
+    describe "Dictionary:" $ do
+      M.fromList [("a"::String,100::Int32)]
+         `shouldSerDesTo`
+         [18,0,0,0
+           ,1,0,0,0
+             ,4,0,0,0,1,0,0,0,97,0,0,0
+             ,2,0,0,0
+               ,100,0,0,0]
+      M.fromList [("a"::String,100::Int32)
+                 ,("b"        ,200)
+                 ,("c"        ,300)]
+         `shouldSerDesTo`
+         [18,0,0,0
+           ,3,0,0,0
+             ,4,0,0,0,1,0,0,0,97,0,0,0
+             ,2,0,0,0
+               ,100,0,0,0
+             ,4,0,0,0,1,0,0,0,98,0,0,0
+             ,2,0,0,0
+               ,200,0,0,0
+             ,4,0,0,0,1,0,0,0,99,0,0,0
+             ,2,0,0,0
+               ,44,1,0,0]
 
 -- | Generate tests like:
 -- X10 `shouldDesSerTo` [0,0,0,0]
@@ -232,11 +237,11 @@ specCustomTypes =
                                       ,2,0,0,0, 1,0,0,0
                                       ,1,0,0,0 ,1,0,0,0]
     describe "Complex" $ do
-      Complex 1 2 `shouldSerDesTo` [3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
+      Complex 1 2 `shouldSerDesTo` [17,0,0,0,2,0,0,0,3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
     describe "Msg" $ do
       Join
         `shouldSerDesTo`
-        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array
+        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array (sum type)
           ,2,0,0,0 ,0,0,0,0]       -- 0. constructor (State) of Msg
       State (M.fromList
         [
@@ -244,19 +249,21 @@ specCustomTypes =
           , (66,77))
         ])
         `shouldSerDesTo`
-        [ 28,0,0,0 ,2,0,0,0        -- State is serialized as 2-elem array
-            ,2,0,0,0 ,1,0,0,0      -- 1. constructor (State) of Msg
-            ,28,0,0,0 ,1,0,0,0     -- Map of 1 elements
-              ,28,0,0,0 ,3,0,0,0   -- HostAddr is serialized as 3-elem array
-                ,2,0,0,0 ,0,0,0,0  -- 0. constructor (SockAddrInet) of HostAddr
-                ,2,0,0,0,88,0,0,0  -- PortNumber
-                ,2,0,0,0,127,0,0,0 -- Host
-              ,2,0,0,0 ,66,0,0,0   -- fst Int
-              ,2,0,0,0 ,77,0,0,0   -- snd Int
+        [ 28,0,0,0 ,2,0,0,0          -- State is serialized as 2-elem array (sum type)
+            ,2,0,0,0 ,1,0,0,0        -- 1. constructor (State) of Msg
+            ,28,0,0,0 ,1,0,0,0       -- General Map (not dict.) of 1 elements
+              ,28,0,0,0, 2,0,0,0     -- Generic Map Tuple
+                ,28,0,0,0 ,3,0,0,0   -- HostAddr is serialized as 3-elem array
+                  ,2,0,0,0 ,0,0,0,0  -- 0. constructor (SockAddrInet) of HostAddr
+                  ,2,0,0,0,88,0,0,0  -- PortNumber
+                  ,2,0,0,0,127,0,0,0 -- Host
+                ,28,0,0,0 ,2,0,0,0   -- Tuple is serialized as object (17)
+                  ,2,0,0,0 ,66,0,0,0 -- fst Int
+                  ,2,0,0,0 ,77,0,0,0 -- snd Int
         ]
       Leave
         `shouldSerDesTo`
-        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array
+        [28,0,0,0, 1,0,0,0         -- State is serialized as 2-elem array (sum type)
           ,2,0,0,0 ,2,0,0,0]       -- 0. constructor (State) of Msg
 
     describe "CliMsg" $ do
@@ -279,8 +286,9 @@ specCustomTypes =
       PUT_STATE (M.fromList [(10,True)])
         `shouldSerDesTo`
         [28,0,0,0, 1,0,0,0
-          ,2,0,0,0 ,10,0,0,0
-          ,1,0,0,0, 1,0,0,0
+          ,28,0,0,0, 2,0,0,0
+            ,2,0,0,0 ,10,0,0,0
+            ,1,0,0,0, 1,0,0,0
           ]
 
 
