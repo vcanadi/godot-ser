@@ -237,7 +237,7 @@ specCustomTypes =
                                       ,2,0,0,0, 1,0,0,0
                                       ,1,0,0,0 ,1,0,0,0]
     describe "Complex" $ do
-      Complex 1 2 `shouldSerDesTo` [17,0,0,0,2,0,0,0,3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
+      Complex 1 2 `shouldSerDesTo` [28,0,0,0,2,0,0,0,3,0,0,0,0,0,128,63 ,3,0,0,0,0,0,0,64]
     describe "Msg" $ do
       Join
         `shouldSerDesTo`

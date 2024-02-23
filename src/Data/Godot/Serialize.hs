@@ -161,6 +161,16 @@ instance (Serializable a, Serializable b) => Serializable (a, b) where
   ser (x,y) = prefix 28 <> ser (Int32Cl 2) <> ser x <> ser y
   desP = prefixP 28 *> bytesP [2,0,0,0] *> ((,) <$> desP <*> desP)
 
+-- | Serialize 3-tuple as two element heterogeneous list (as would godot represent it)
+instance (Serializable a, Serializable b, Serializable c) => Serializable (a, b, c) where
+  ser (x,y,z) = prefix 28 <> ser (Int32Cl 3) <> ser x <> ser y <> ser z
+  desP = prefixP 28 *> bytesP [3,0,0,0] *> ((,,) <$> desP <*> desP <*> desP)
+
+-- | Serialize 4-tuple as two element heterogeneous list (as would godot represent it)
+instance (Serializable a, Serializable b, Serializable c, Serializable d) => Serializable (a, b, c, d) where
+  ser (x,y,z,w) = prefix 28 <> ser (Int32Cl 4) <> ser x <> ser y <> ser z <> ser w
+  desP = prefixP 28 *> bytesP [4,0,0,0] *> ((,,,) <$> desP <*> desP <*> desP <*> desP)
+
 digitsToFull4 :: Integral a => a -> a
 digitsToFull4 n = (4 - n `rem` 4) `rem` 4
 
@@ -237,7 +247,7 @@ instance (DS f, DS g, IX f, IX g
                                                                      in if i < n `div` 2
                                                                        then L1 <$> dsGP (Just (i, k))
                                                                        else R1 <$> dsGP (Just (i-k,n-k))
-instance (DS f, DS g) => DS (f :*: g)    where dsGP Nothing = prefixP 17 *> desP @Int32Cl *> ((:*:) <$> dsGP (Just (0,0)) <*> dsGP (Just (0,0)))
+instance (DS f, DS g) => DS (f :*: g)    where dsGP Nothing = prefixP 28 *> desP @Int32Cl *> ((:*:) <$> dsGP (Just (0,0)) <*> dsGP (Just (0,0)))
                                                dsGP n       = (:*:) <$> dsGP n <*> dsGP n
 instance (Serializable a) => DS (K1 x a) where dsGP _ = K1 <$> desP
 instance DS U1                           where dsGP _ = pure U1
@@ -256,7 +266,7 @@ instance (IX f, IX g, SRV (f :+: g)
          ) => SR (f :+: g)               where srG v = (if maxSizeH (Proxy @(f :+: g)) > 0 then prefix 28 <> ser (Int32Cl $ sizeH v + 1) else "")
                                                     <> ser (ix' v) <> srvG v
 instance (SRV (f :*: g), SizeH (f :*: g)
-         ) => SR (f :*: g)               where srG v = prefix 17 <> ser (Int32Cl $ sizeH v ) <> srvG v
+         ) => SR (f :*: g)               where srG v = prefix 28 <> ser (Int32Cl $ sizeH v ) <> srvG v
 instance (Serializable a) => SR (K1 x a) where srG (K1 v) = ser v
 instance SR U1                           where srG U1 = ""
 
