@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Data.Godot.SerializeSpec ( spec) where
 import           Test.Hspec
@@ -88,6 +89,7 @@ shouldSerDesTo x bytes = do
 spec :: Spec
 spec = describe "Samples:" $ do
   specPrimitives
+  specByteString
   specString
   specList
   specMap
@@ -106,7 +108,17 @@ specPrimitives =
     (1 :: Double)         `shouldSerDesTo` [3,0,0,0 ,0,0,128,63]
     (2 :: Double)         `shouldSerDesTo` [3,0,0,0 ,0,0,0,64]
     (1.1 :: Double)       `shouldSerDesTo` [3,0,1,0 ,154,153,153,153,153,153,241,63]
-    -- (10::Int32,20::Int32) `shouldSerDesTo` [2,0,0,0,10,0,0,0 ,2,0,0,0,20,0,0,0]
+    (10::Int32,20::Int32) `shouldSerDesTo` [28,0,0,0,2,0,0,0, 2,0,0,0,10,0,0,0 ,2,0,0,0,20,0,0,0]
+    Just (11::Int32)       `shouldSerDesTo` [28,0,0,0,2,0,0,0, 2,0,0,0,1,0,0,0 ,2,0,0,0,11,0,0,0]
+
+
+specByteString :: Spec
+specByteString = describe "String:" $ do
+  ("a"::ByteString)     `shouldSerDesTo` [97]
+  ("ab"::ByteString)    `shouldSerDesTo` [97,98]
+  ("abc"::ByteString)   `shouldSerDesTo` [97,98,99]
+  ("abcd"::ByteString)  `shouldSerDesTo` [97,98,99,100]
+  ("abcde"::ByteString) `shouldSerDesTo` [97,98,99,100,101]
 
 specString :: Spec
 specString = describe "String:" $ do

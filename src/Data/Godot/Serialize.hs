@@ -14,7 +14,7 @@ module Data.Godot.Serialize where
 import Data.ByteString (ByteString, pack, unpack, singleton)
 import Data.String(fromString)
 import qualified Data.ByteString as BS
-import Data.Word (Word8, Word32, Word16)
+import Data.Word (Word8, Word32, Word16, Word64)
 import Data.Store(encode, decode, PeekException, Store)
 import Data.Int (Int32, Int64)
 import Control.Arrow (Arrow(first), ArrowChoice (left))
@@ -25,7 +25,9 @@ import Data.Default (Default(..))
 import Control.Monad (replicateM, void)
 import Data.Functor (($>))
 import Data.Attoparsec.ByteString
-    ( Parser, word8, anyWord8, parseOnly )
+    ( Parser, word8, anyWord8, parseOnly)
+
+import qualified Data.Attoparsec.ByteString as Att
 import GHC.Generics
     ( Generic(..),
       U1(..),
@@ -37,6 +39,7 @@ import Data.Map(Map)
 import qualified Data.Map as M
 import Data.Proxy (Proxy(Proxy))
 import Data.Foldable (traverse_)
+import Linear (V2)
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect
             | DesErrWrongValues String -- ^ Error if prefix is correct, but rest of the message is incorrect
@@ -86,6 +89,10 @@ class Serializable a where
   desP :: Parser a
   default desP :: (Generic a, DS (Rep a)) => Parser a
   desP = genericDesP
+
+instance Serializable ByteString where
+  ser = id
+  desP = Att.takeWhile $ const True
 
 instance Serializable () where
   ser () = bytes [0,0,0,0]
@@ -138,6 +145,10 @@ instance Serializable Int where
   ser = ser @Int64 . fromIntegral
   desP = fromIntegral <$> desP @Int64
 
+instance Serializable Word8 where
+  ser = ser @Int32 . fromIntegral
+  desP = fromIntegral <$> desP @Int32
+
 instance Serializable Word16 where
   ser = ser @Int32 . fromIntegral
   desP = fromIntegral <$> desP @Int32
@@ -145,6 +156,14 @@ instance Serializable Word16 where
 instance Serializable Word32 where
   ser = ser @Int32 . fromIntegral
   desP = fromIntegral <$> desP @Int32
+
+instance Serializable Word64 where
+  ser = ser @Int64 . fromIntegral
+  desP = fromIntegral <$> desP @Int64
+
+instance Serializable Float where
+  ser = ser @Double . realToFrac
+  desP = realToFrac <$> desP @Double
 
 instance Serializable Double where
   ser x = if isFloat32 x
@@ -189,6 +208,12 @@ instance {-# OVERLAPS #-} Serializable String where
     pure res
     where
       charP = toEnum . fromEnum <$> singleByte
+
+-- | Maybe serialization
+instance (Serializable a) => Serializable (Maybe a)
+
+-- | Vector serialization
+instance (Serializable n) => Serializable (V2 n)
 
 -- List serialization
 

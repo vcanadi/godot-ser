@@ -21,6 +21,7 @@ dependencies:
   - data-default
   - attoparsec
   - store
+  - linear
 
 library:
   source-dirs: src
