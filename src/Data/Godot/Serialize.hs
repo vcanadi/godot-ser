@@ -265,9 +265,8 @@ instance {-# OVERLAPPABLE #-} (Serializable a, Serializable b, Ord a) => Seriali
 class DS f                               where dsGP :: Maybe (Int32, Int32) -> Parser (f a)
 instance DS f => DS (M1 x y f)           where dsGP n = M1 <$> dsGP n
 instance (DS f, DS g, IX f, IX g
-         , MaxSizeH (f:+:g)
-         ) => DS (f :+: g)               where dsGP Nothing = (if maxSizeH (Proxy @(f :+: g)) > 0 then  prefixP 28 *> any4BytesP else pure "")
-                                                           *> (dsGP . Just . (,sizeV (Proxy @(f :+: g))) =<< desP)
+         , MW (f:+:g)) => DS (f :+: g)   where dsGP Nothing = (if mW (Proxy @(f :+: g)) > 0 then  prefixP 28 *> any4BytesP else pure "")
+                                                           *> (dsGP . Just . (,h (Proxy @(f :+: g))) =<< desP)
                                                dsGP (Just (i,n)) = let k = n `div` 2
                                                                      in if i < n `div` 2
                                                                        then L1 <$> dsGP (Just (i, k))
@@ -286,12 +285,12 @@ genericDesP = to <$> dsGP Nothing
 class SR f                               where srG :: f a -> ByteString
 instance SR f => SR (M1 x y f)           where srG (M1 v) = srG v
 instance (IX f, IX g, SRV (f :+: g)
-         , SizeH (f:+:g)
-         , MaxSizeH (f :+: g)
-         ) => SR (f :+: g)               where srG v = (if maxSizeH (Proxy @(f :+: g)) > 0 then prefix 28 <> ser (Int32Cl $ sizeH v + 1) else "")
+         , W (f:+:g)
+         , MW (f :+: g)
+         ) => SR (f :+: g)               where srG v = (if mW (Proxy @(f :+: g)) > 0 then prefix 28 <> ser (Int32Cl $ w v + 1) else "")
                                                     <> ser (ix' v) <> srvG v
-instance (SRV (f :*: g), SizeH (f :*: g)
-         ) => SR (f :*: g)               where srG v = prefix 28 <> ser (Int32Cl $ sizeH v ) <> srvG v
+instance (SRV (f :*: g), W (f :*: g)
+         ) => SR (f :*: g)               where srG v = prefix 28 <> ser (Int32Cl $ w v ) <> srvG v
 instance (Serializable a) => SR (K1 x a) where srG (K1 v) = ser v
 instance SR U1                           where srG U1 = ""
 
@@ -307,37 +306,34 @@ instance SRV f => SRV (M1 x y f)          where srvG (M1 v) = srvG v
 instance (Serializable a) => SRV (K1 x a) where srvG (K1 v) = ser v
 instance SRV U1                           where srvG U1 = ""
 
--- | "Vertical" size (number of constructors in a sum type)
-class SizeV (f :: * -> *)              where sizeV :: Proxy f -> Int32
-instance (SizeV f, SizeV g)
-         => SizeV (f :+: g)            where sizeV _ = sizeV (Proxy @f) + sizeV (Proxy @g)
-instance SizeV (f :*: g)               where sizeV _ = 1
-instance SizeV (K1 i c)                where sizeV _ = 1
-instance (SizeV f) => SizeV (M1 i t f) where sizeV _ = sizeV (Proxy @f)
-instance SizeV U1                      where sizeV _ = 1
+-- | Height (number of constructors in a sum type)
+class H (f :: * -> *)              where h :: Proxy f -> Int32
+instance (H f, H g) => H (f :+: g) where h _ = h (Proxy @f) + h (Proxy @g)
+instance H (f :*: g)               where h _ = 1
+instance H (K1 i c)                where h _ = 1
+instance (H f) => H (M1 i t f)     where h _ = h (Proxy @f)
+instance H U1                      where h _ = 1
 
 -- | Index of a constructor
-class (SizeV f) => IX (f :: * -> *)   where ix' :: f p -> Int32
-instance (IX f, IX g) => IX (f :+: g) where ix' = \case (L1 x) -> ix' x; (R1 x) -> sizeV (Proxy @f) + ix' x
+class (H f) => IX (f :: * -> *)   where ix' :: f p -> Int32
+instance (IX f, IX g) => IX (f :+: g) where ix' = \case (L1 x) -> ix' x; (R1 x) -> h (Proxy @f) + ix' x
 instance IX (f :*: g)                 where ix' _ = 0
 instance IX (K1 i c)                  where ix' _ = 0
 instance (IX f) => IX (M1 i t f)      where ix' (M1 x) = ix' x
 instance IX U1                        where ix' _ = 0
 
--- | "Horizontal" size (number of fields of specific product)
-class SizeH (f :: * -> *)                      where sizeH :: f p -> Int32
-instance (SizeH f, SizeH g) => SizeH (f :+: g) where sizeH = \case (L1 x) -> sizeH x; (R1 y) -> sizeH y
-instance (SizeH f, SizeH g) => SizeH (f :*: g) where sizeH (x:*:y) = sizeH x + sizeH y
-instance SizeH (K1 i c)                        where sizeH _ = 1
-instance (SizeH f) => SizeH (M1 i t f)         where sizeH (M1 x) = sizeH x
-instance SizeH U1                              where sizeH _ = 0
+-- | Width (number of fields of specific product)
+class W (f :: * -> *)              where w :: f p -> Int32
+instance (W f, W g) => W (f :+: g) where w = \case (L1 x) -> w x; (R1 y) -> w y
+instance (W f, W g) => W (f :*: g) where w (x:*:y) = w x + w y
+instance W (K1 i c)                where w _ = 1
+instance (W f) => W (M1 i t f)     where w (M1 x) = w x
+instance W U1                      where w _ = 0
 
--- | "Horizontal" size (max number of fields of any product)
-class MaxSizeH (f :: * -> *)               where maxSizeH :: Proxy f -> Int32
-instance (MaxSizeH f, MaxSizeH g)
-         => MaxSizeH (f :+: g)             where maxSizeH _ = max (maxSizeH (Proxy @f)) (maxSizeH (Proxy @g))
-instance (MaxSizeH f, MaxSizeH g)
-         => MaxSizeH (f :*: g)             where maxSizeH _ = maxSizeH (Proxy @f) + maxSizeH (Proxy @g)
-instance MaxSizeH (K1 i c)                 where maxSizeH _ = 1
-instance MaxSizeH f => MaxSizeH (M1 i t f) where maxSizeH _ = maxSizeH (Proxy @f)
-instance MaxSizeH U1                       where maxSizeH _ = 0
+-- | Max width (max number of fields of any product)
+class MW (f :: * -> *)                where mW :: Proxy f -> Int32
+instance (MW f, MW g) => MW (f :+: g) where mW _ = max (mW (Proxy @f)) (mW (Proxy @g))
+instance (MW f, MW g) => MW (f :*: g) where mW _ = mW (Proxy @f) + mW (Proxy @g)
+instance MW (K1 i c)                  where mW _ = 1
+instance MW f => MW (M1 i t f)        where mW _ = mW (Proxy @f)
+instance MW U1                        where mW _ = 0
