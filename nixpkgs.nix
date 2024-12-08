@@ -4,11 +4,12 @@
 let
   nixpkgs = import (builtins.fetchTarball
     {  # Descriptive name to make the store path easier to identify
-      name = "nixos-unstable-2023-11-26";
+      name = "nixos-unstable-2024-12-08";
       # git ls-remote https://github.com/nixos/nixpkgs <channel>
-      url = "https://github.com/nixos/nixpkgs/archive/5631ea37394bb38556cbb2b4142cd28ba49ff2d9.tar.gz";
+      url = "https://github.com/nixos/nixpkgs/archive/1544a19df5d06bbce4ee578e9ec55515454f6b7f.tar.gz";
       # nix-prefetch-url --unpack <url>
-      sha256 = "11k114qrmg40mnm81x2hihs7apkffnkrichk3la90718pbb0da03";
+      sha256 = "sha256:062320xxpi3q70hl5mx8hzyzj1brvwgr34r7qxdai5wj9sk27r59";
     }) ;
   # local = import <nixpkgs>;
 in nixpkgs {}
+
