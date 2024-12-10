@@ -40,6 +40,7 @@ import qualified Data.Map as M
 import Data.Proxy (Proxy(Proxy))
 import Data.Foldable (traverse_)
 import Linear (V2)
+import Data.Kind (Type)
 
 data DesErr = DesErrWrongPrefix String -- ^ Error if first 4 bytes, that encode godot type, are incorrect
             | DesErrWrongValues String -- ^ Error if prefix is correct, but rest of the message is incorrect
@@ -70,11 +71,11 @@ any8BytesP :: Parser ByteString
 any8BytesP = BS.pack <$> replicateM 8 anyWord8
 
 -- | Parser that uses Store's decode function and channels decoding error accordingly
-decode8P :: forall m a. (Store a) => Parser a
+decode8P :: forall a. (Store a) => Parser a
 decode8P = any8BytesP  >>= (decode >>> either (fail . show) pure)
 
 -- | 4 byte version of decodeP
-decode4P :: forall m a. (Store a) => Parser a
+decode4P :: forall a. (Store a) => Parser a
 decode4P = any4BytesP  >>= (decode >>> either (fail . show) pure)
 
 class Serializable a where
@@ -134,7 +135,7 @@ instance Serializable Int64 where
              then bytes [2,0,0,0] <> encode (fromIntegral n :: Int32) -- serialize in 4-byte chunks
              else bytes [2,0,1,0] <> encode n                         -- serialize in 8-byte chunks
 
-  desP = bytesP [2,0,0,0] *> (fromIntegral <$> decode4P @_ @Int32)
+  desP = bytesP [2,0,0,0] *> (fromIntegral <$> decode4P @Int32)
      <|> bytesP [2,0,1,0] *> decode8P
 
 -- | Check if Double (float 64) is inside the subset of Float (float 32) numbers
@@ -169,7 +170,7 @@ instance Serializable Double where
   ser x = if isFloat32 x
              then bytes [3,0,0,0] <> encode (realToFrac x :: Float) -- serialize in 4-byte chunks
              else bytes [3,0,1,0] <> encode x                       -- serialize in 8-byte chunks
-  desP = bytesP [3,0,0,0] *> (realToFrac <$> decode4P @_ @Float)
+  desP = bytesP [3,0,0,0] *> (realToFrac <$> decode4P @Float)
      <|> bytesP [3,0,1,0] *> decode8P
 
 serBytes :: (Serializable a) => a -> [Word8]
@@ -299,7 +300,7 @@ genericSer = srG . from
 
 -- | Serialize inner values (skip constructors)
 class SRV f                               where srvG :: f a -> ByteString
-instance (SRV f, SRV g, IX f, IX g)
+instance (SRV f, SRV g)
          => SRV (f :+: g)                 where srvG = \case L1 x -> srvG x; R1 y -> srvG y
 instance (SRV f, SRV g) => SRV (f :*: g)  where srvG (x :*: y) = srvG x <> srvG y
 instance SRV f => SRV (M1 x y f)          where srvG (M1 v) = srvG v
@@ -307,7 +308,7 @@ instance (Serializable a) => SRV (K1 x a) where srvG (K1 v) = ser v
 instance SRV U1                           where srvG U1 = ""
 
 -- | Height (number of constructors in a sum type)
-class H (f :: * -> *)              where h :: Proxy f -> Int32
+class H (f :: Type -> Type)        where h :: Proxy f -> Int32
 instance (H f, H g) => H (f :+: g) where h _ = h (Proxy @f) + h (Proxy @g)
 instance H (f :*: g)               where h _ = 1
 instance H (K1 i c)                where h _ = 1
@@ -315,7 +316,7 @@ instance (H f) => H (M1 i t f)     where h _ = h (Proxy @f)
 instance H U1                      where h _ = 1
 
 -- | Index of a constructor
-class (H f) => IX (f :: * -> *)   where ix' :: f p -> Int32
+class (H f) => IX (f :: Type -> Type) where ix' :: f p -> Int32
 instance (IX f, IX g) => IX (f :+: g) where ix' = \case (L1 x) -> ix' x; (R1 x) -> h (Proxy @f) + ix' x
 instance IX (f :*: g)                 where ix' _ = 0
 instance IX (K1 i c)                  where ix' _ = 0
@@ -323,7 +324,7 @@ instance (IX f) => IX (M1 i t f)      where ix' (M1 x) = ix' x
 instance IX U1                        where ix' _ = 0
 
 -- | Width (number of fields of specific product)
-class W (f :: * -> *)              where w :: f p -> Int32
+class W (f :: Type -> Type)        where w :: f p -> Int32
 instance (W f, W g) => W (f :+: g) where w = \case (L1 x) -> w x; (R1 y) -> w y
 instance (W f, W g) => W (f :*: g) where w (x:*:y) = w x + w y
 instance W (K1 i c)                where w _ = 1
@@ -331,7 +332,7 @@ instance (W f) => W (M1 i t f)     where w (M1 x) = w x
 instance W U1                      where w _ = 0
 
 -- | Max width (max number of fields of any product)
-class MW (f :: * -> *)                where mW :: Proxy f -> Int32
+class MW (f :: Type -> Type)          where mW :: Proxy f -> Int32
 instance (MW f, MW g) => MW (f :+: g) where mW _ = max (mW (Proxy @f)) (mW (Proxy @g))
 instance (MW f, MW g) => MW (f :*: g) where mW _ = mW (Proxy @f) + mW (Proxy @g)
 instance MW (K1 i c)                  where mW _ = 1
