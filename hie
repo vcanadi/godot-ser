@@ -1,0 +1,34 @@
+#!/bin/sh
+
+if [ "$HIE_BIOS_OUTPUT" != "" ]; then
+	exec >$HIE_BIOS_OUTPUT
+fi
+
+pkgdirs=$(ls */package.yaml */*/package.yaml | sed 's,/package.yaml,,')
+moddirs=$(printf '%s\n' -- "$@" | sed '/\.hs$/!d;s,/[A-Z].*,,')
+incdirs=$(echo $moddirs $pkgdirs | sed 's, ,:,g')
+warnings=(
+	-Wall
+	-Widentities
+	-Wno-missing-local-signatures
+	-Wno-unrecognised-pragmas
+	-Wredundant-constraints
+	-Wunused-imports
+	-Wmissing-exported-signatures
+	-Wunused-packages
+	-Werror=missing-fields
+	-Werror=incomplete-uni-patterns
+	-Werror=incomplete-record-updates
+)
+
+for a in ${warnings[*]} -XGHC2021 -XApplicativeDo -i$incdirs; do
+  echo "$a"
+done
+
+# hie wants every a list of every single module
+# this seems to have obvious flaws for adding modules
+if [ "$HIE_BIOS_OUTPUT" != "" ]; then
+	(for a in $(find $pkgdirs -name '*.hs'); do
+		echo $a
+	done) | sed -E 's,^[0-9a-z/-]+([A-Z]),\1,;s,/,.,g;s/\.hs$//'
+fi
