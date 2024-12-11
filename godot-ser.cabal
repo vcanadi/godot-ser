@@ -1,0 +1,67 @@
+cabal-version: 2.2
+
+name:           godot-ser
+version:        0.1.0.0
+synopsis:       Binary [de]serialization compatible with Godot game engine's default serialization (var_to_bytes, bytes_to_var)
+author:         Vito Canadi
+maintainer:     vito.canadi@gmail.com
+license:        NONE
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    CHANGELOG.md
+
+library
+  exposed-modules:
+      Data.Godot.Serialize
+  other-modules:
+      Paths_godot_ser
+  autogen-modules:
+      Paths_godot_ser
+  hs-source-dirs:
+      src
+  default-extensions:
+      LambdaCase
+      OverloadedStrings
+      DefaultSignatures
+      ScopedTypeVariables
+      TypeApplications
+      DeriveGeneric
+  build-depends:
+      attoparsec
+    , base
+    , bytestring
+    , containers
+    , data-default
+    , linear
+    , store
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Data.Godot.SerializeSpec
+      Paths_godot_ser
+  autogen-modules:
+      Paths_godot_ser
+  hs-source-dirs:
+      spec
+  default-extensions:
+      LambdaCase
+      OverloadedStrings
+      DefaultSignatures
+      ScopedTypeVariables
+      TypeApplications
+      DeriveGeneric
+  build-depends:
+      attoparsec
+    , base
+    , bytestring
+    , containers
+    , data-default
+    , godot-ser
+    , hspec
+    , linear
+    , store
+  default-language: Haskell2010
