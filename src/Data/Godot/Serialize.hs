@@ -11,17 +11,14 @@
 
 module Data.Godot.Serialize where
 
-import Data.ByteString (ByteString, pack, unpack, singleton)
-import Data.String(fromString)
+import Data.ByteString (ByteString, pack)
 import qualified Data.ByteString as BS
 import Data.Word (Word8, Word32, Word16, Word64)
 import Data.Store(encode, decode, PeekException, Store)
 import Data.Int (Int32, Int64)
-import Control.Arrow (Arrow(first), ArrowChoice (left))
+import Control.Arrow (ArrowChoice (left))
 import Control.Category ((>>>))
-import Data.Char (chr, ord)
-import Control.Applicative ((<|>), Alternative (many))
-import Data.Default (Default(..))
+import Control.Applicative ((<|>))
 import Control.Monad (replicateM, void)
 import Data.Functor (($>))
 import Data.Attoparsec.ByteString
@@ -38,7 +35,6 @@ import GHC.Generics
 import Data.Map(Map)
 import qualified Data.Map as M
 import Data.Proxy (Proxy(Proxy))
-import Data.Foldable (traverse_)
 import Linear (V2)
 import Data.Kind (Type)
 
