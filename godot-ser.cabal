@@ -54,12 +54,12 @@ test-suite spec
       TypeApplications
       DeriveGeneric
   build-depends:
-      attoparsec >= 0.14.4 && < 0.15
-    , base       >= 4.16 && <5
-    , bytestring >= 0.11.4 && < 0.12
-    , containers >= 0.6.5 && < 0.7
-    , linear     >= 1.21 && < 1.23
-    , store      >= 0.7.16 && < 0.8
+      attoparsec
+    , base
+    , bytestring
+    , containers
+    , linear
+    , store
     , godot-ser
     , hspec
   default-language: Haskell2010
